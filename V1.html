@@ -1,0 +1,1038 @@
+<!doctype html>
+<html lang="fr">
+<head>
+<meta charset="utf-8"/>
+<meta name="viewport" content="width=device-width,initial-scale=1"/>
+<title>Générateur PDF — Repères : croix pointillées + lignes extérieures</title>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
+<style>
+:root{
+  --bg:#1e1e1e;
+  --panel:#2c2c2c;
+  --card:#333;
+  --text:#eee;
+  --muted:#aaa;
+  --accent:#007bff;
+}
+body{font-family:Inter,system-ui,-apple-system,"Segoe UI",Roboto,Helvetica,Arial;margin:0;background:var(--bg);color:var(--text);} 
+.app{display:grid;grid-template-columns:1fr 420px;gap:16px;padding:16px;height:100vh;box-sizing:border-box;}
+.preview-panel{background:var(--card);border-radius:10px;padding:12px;box-shadow:0 6px 20px rgba(0,0,0,0.06);display:flex;flex-direction:column;min-height:0;overflow:hidden;}
+.preview-head{display:flex;justify-content:space-between;align-items:center;gap:12px;margin-bottom:8px;}
+#pagePreviewWrap{flex:1;display:flex;align-items:center;justify-content:center;padding:8px;overflow:auto;}
+.page{background:#fff;border-radius:6px;box-shadow:0 6px 20px rgba(0,0,0,0.4);position:relative;display:grid;align-content:start;}
+.page .slot{box-sizing:border-box; border:1px dashed rgba(0,0,0,0.06); background:#f8f8f8; display:flex;align-items:center;justify-content:center; position:relative; overflow:hidden;user-select:none;}
+.slot img{width:100%;height:100%;object-fit:cover;display:block;}
+.plusTile{display:flex;flex-direction:column;align-items:center;justify-content:center;color:#666;font-weight:700;border-radius:4px;background:linear-gradient(180deg,#fff,#f0f0f0);width:90%;height:90%;}
+.plusTile span{font-size:28px;line-height:1;}
+.thumbRemove{position:absolute;top:8px;right:8px;background:rgba(0,0,0,0.6);color:#fff;padding:4px 7px;border-radius:6px;cursor:pointer;font-size:13px;}
+.thumbIndex{position:absolute;left:8px;bottom:8px;background:rgba(0,0,0,0.6);color:#fff;padding:4px 7px;border-radius:6px;font-size:13px;}
+/* icône déplacer : case légèrement réduite */
+.thumbMove{
+  position:absolute;
+  left:10px;
+  top:10px;
+  width:58px; /* réduit */
+  height:58px; /* réduit */
+  background:rgba(0,0,0,0.55);
+  color:#fff;
+  padding:8px;
+  border-radius:10px;
+  cursor:grab;
+  display:flex;
+  align-items:center;
+  justify-content:center;
+  gap:6px;
+  box-shadow:0 8px 22px rgba(0,0,0,0.45);
+  transition:transform .12s ease, background .12s ease;
+  z-index:9;
+}
+/* SVG légèrement réduit */
+.thumbMove svg{width:34px;height:34px;display:block;opacity:0.98;}
+
+/* hover style and tooltip-like label */
+.thumbMove:hover{
+  transform:translateY(-2px);
+  background:rgba(0,0,0,0.72);
+}
+.thumbMove .label{
+  position:absolute;
+  top:calc(100% + 6px);
+  left:50%;
+  transform:translateX(-50%);
+  background:rgba(0,0,0,0.85);
+  color:#fff;
+  padding:6px 8px;
+  border-radius:6px;
+  font-size:12px;
+  white-space:nowrap;
+  opacity:0;
+  pointer-events:none;
+  transition:opacity .08s ease, transform .12s ease;
+}
+.thumbMove:hover .label{
+  opacity:1;
+  transform:translateX(-50%) translateY(0);
+}
+
+/* mobile adjustments */
+@media(max-width:600px){
+  .thumbMove{ width:48px; height:48px; padding:6px; border-radius:8px; }
+  .thumbMove svg{ width:30px; height:30px; }
+}
+
+.menu{background:var(--panel);border-radius:10px;padding:14px;box-shadow:0 6px 20px rgba(0,0,0,0.04);height:100%;position:sticky;top:16px;overflow:auto;display:flex;flex-direction:column;}
+label{display:block;margin-top:10px;font-weight:600;font-size:13px;}
+input[type="file"],input[type="number"],select,button,input[type="color"]{width:100%;padding:8px;margin-top:6px;border-radius:6px;border:1px solid #555;box-sizing:border-box;background:#1e1e1e;color:#eee;}
+input[type="color"]{padding:6px;height:38px;}
+.small{font-size:12px;color:var(--muted);}
+.button-row{display:flex;gap:8px;margin-top:8px;}
+.button-row > *{flex:1;}
+.button-ghost{background:transparent;border:1px solid #555;color:#eee;border-radius:6px;padding:8px;cursor:pointer;}
+.button-primary{background:var(--accent);color:#fff;border:none;border-radius:6px;cursor:pointer;padding:8px;}
+.context-menu{position:fixed;background:#111;border:1px solid #333;padding:10px;border-radius:8px;box-shadow:0 10px 40px rgba(0,0,0,0.6);display:none;z-index:9999;min-width:220px;color:#eee;}
+.context-menu .ctx-title{font-weight:700;margin-bottom:6px;font-size:13px;}
+.context-menu .ctx-hint{font-size:12px;color:#cfcfcf;margin-bottom:8px;line-height:1.2;}
+.context-menu .ctx-actions{display:flex;gap:8px;justify-content:flex-end;margin-top:6px;}
+.context-menu button{background:transparent;border:1px solid #444;color:#fff;padding:6px 10px;border-radius:6px;cursor:pointer;}
+.context-menu button.primary{background:var(--accent);border:none;color:#fff;}
+.context-menu button:hover{opacity:0.95;}
+.context-menu .kbd{display:inline-block;padding:2px 6px;border-radius:4px;background:#222;border:1px solid #333;margin-left:6px;font-weight:700;font-size:11px;}
+.footer-actions{display:flex;gap:8px;margin-top:12px;align-items:center;}
+.progress-wrap{margin-top:12px;display:none;}
+.progress-bar-bg{background:#333;border-radius:6px;height:10px;margin-top:6px;overflow:hidden;}
+.progress-bar-fill{height:100%;width:0%;background:var(--accent);transition:width .18s linear;}
+.estimate{font-size:13px;color:#dcdcdc;margin-left:6px;}
+@media(max-width:980px){.app{grid-template-columns:1fr;}.menu{position:relative;height:auto;}}
+</style>
+</head>
+<body>
+<div class="app">
+  <main class="preview-panel" role="main" aria-label="Aperçu interactif">
+    <div class="preview-head">
+      <h2 style="margin:0;font-size:16px;">Aperçu — grille</h2>
+      <div style="display:flex; gap:8px; align-items:center;">
+        <div id="status" class="small">Aucun fichier</div>
+      </div>
+    </div>
+
+    <div id="pagePreviewWrap">
+      <div id="pagePreview" class="page" aria-label="Aperçu page"></div>
+    </div>
+  </main>
+
+  <aside class="menu" role="complementary">
+    <div style="display:flex; justify-content:space-between; align-items:center;">
+      <div><strong>Paramètres</strong></div>
+      <div style="font-size:12px;color:#666">A4 uniquement</div>
+    </div>
+
+    <label>Ajouter (clic sur + dans la page) — tu peux sélectionner plusieurs images</label>
+    <div class="small">Le + est toujours placé après la dernière carte. Clic gauche sur une carte la duplique. Alt+clic supprime. Clic droit ouvre le menu. Cliquer glisser permet de changer l'ordre.</div>
+
+    <div class="button-row" style="margin-top:8px;">
+      <button id="clearAllBtn" class="button-ghost">Effacer tout</button>
+    </div>
+
+    <hr style="border:none;border-top:1px solid #444;margin:12px 0;">
+
+    <label>Format page</label>
+    <select id="pageSize" aria-label="Format de la page">
+      <option value="a4-portrait" selected>A4 — Portrait (3×3)</option>
+      <option value="a4-landscape">A4 — Paysage (2×4)</option>
+    </select>
+
+    <label>Fond perdu (mm)</label>
+    <input id="bleedSize" type="number" value="1" min="0" max="20" step="0.5" />
+
+    <label>Résolution (DPI)</label>
+    <select id="dpiSelect" aria-label="DPI">
+      <option value="300">300</option>
+      <option value="600" selected>600</option>
+      <option value="max">Max (sans upscaling)</option>
+    </select>
+
+    <label>Couleur croix pointillées</label>
+    <input id="crossColor" type="color" value="#000000" title="Couleur des croix pointillées (PDF)">
+
+    <!-- Bouton téléchargement + estimation -->
+    <div class="footer-actions" style="margin-top:12px;">
+      <button id="downloadBtn" class="button-primary" style="flex:1;" disabled>Télécharger le PDF</button>
+      <div id="estimateText" class="estimate">—</div>
+    </div>
+
+    <div id="progressWrap" class="progress-wrap" aria-hidden="true" style="display:none;">
+      <div id="progressText" class="small">0 / 0 images — DPI: --</div>
+      <div class="progress-bar-bg"><div id="progressBar" class="progress-bar-fill" style="width:0%"></div></div>
+    </div>
+
+    <div style="margin-top:12px">
+      <div class="small">Repères : croix pointillées aux coins, lignes continues seulement dans les marges externes pour faciliter l'alignement.</div>
+    </div>
+
+  </aside>
+</div>
+
+<input id="filePicker" type="file" accept="image/*" multiple style="display:none">
+
+<!-- Menu contextuel informatif -->
+<div id="contextMenu" class="context-menu" role="menu" aria-hidden="true">
+  <div class="ctx-title">Raccourcis & actions</div>
+  <div class="ctx-hint">
+    <div>Clic gauche sur la vignette → <strong>Dupliquer</strong> (<span class="kbd">clic gauche</span>).</div>
+    <div>Alt + clic sur la vignette → <strong>Supprimer</strong> (<span class="kbd">Alt</span> + <span class="kbd">clic</span>).</div>
+  </div>
+  <div style="font-size:12px;color:#bbb;">Actions rapides :</div>
+  <div class="ctx-actions">
+    <button id="ctxDuplicate">Dupliquer</button>
+    <button id="ctxDelete" class="primary">Supprimer</button>
+  </div>
+</div>
+
+<script>
+const jsPDF = (function(){
+  if(window.jspdf && window.jspdf.jsPDF) return window.jspdf.jsPDF;
+  if(window.jsPDF) return window.jsPDF;
+  console.error('jsPDF non trouvé : vérifie que la librairie jspdf est chargée.');
+  return null;
+})();
+
+/* ======== Constants & state ======== */
+const CARD_W_MM = 63, CARD_H_MM = 88;
+const MAX_SLOTS = 9;
+
+const pagePreview = document.getElementById('pagePreview');
+const pagePreviewWrap = document.getElementById('pagePreviewWrap');
+const filePicker = document.getElementById('filePicker');
+const downloadBtn = document.getElementById('downloadBtn');
+const statusEl = document.getElementById('status');
+const bleedInput = document.getElementById('bleedSize');
+const pageSizeSel = document.getElementById('pageSize');
+const dpiSelect = document.getElementById('dpiSelect');
+const clearAllBtn = document.getElementById('clearAllBtn');
+const crossColorInput = document.getElementById('crossColor');
+const estimateText = document.getElementById('estimateText');
+
+const contextMenu = document.getElementById('contextMenu');
+const ctxDupBtn = document.getElementById('ctxDuplicate');
+const ctxDelBtn = document.getElementById('ctxDelete');
+
+const progressWrap = document.getElementById('progressWrap');
+const progressText = document.getElementById('progressText');
+const progressBar = document.getElementById('progressBar');
+
+let uploadedFiles = [];
+let slots = new Array(MAX_SLOTS).fill(null);
+let contextTargetSlot = null;
+let crossColorHex = crossColorInput.value || '#000000';
+
+function uid(){ return Math.random().toString(36).slice(2,9); }
+function updateStatus(){ statusEl.textContent = uploadedFiles.length ? `${uploadedFiles.length} fichier(s)` : 'Aucun fichier'; }
+
+function getVisibleSlotsCount(){
+  if(pageSizeSel.value === 'a4-portrait') return 3 * 3;
+  return 4 * 2;
+}
+
+function getFirstEmptySlotIndex(){
+  const visibleCount = getVisibleSlotsCount();
+  for(let i=0;i<visibleCount;i++){
+    if(slots[i] === null) return i;
+  }
+  return -1;
+}
+
+function getPageDimensions_mm(){
+  if(pageSizeSel.value === 'a4-portrait') return { width:210, height:297 };
+  return { width:297, height:210 };
+}
+
+/* ======== Context menu display ======== */
+function showContextMenuAt(clientX, clientY){
+  contextMenu.style.display = 'block';
+  contextMenu.setAttribute('aria-hidden','false');
+  contextMenu.style.left = clientX + 'px';
+  contextMenu.style.top = clientY + 'px';
+  requestAnimationFrame(()=> {
+    const rect = contextMenu.getBoundingClientRect();
+    let left = clientX;
+    let top = clientY;
+    const padding = 8;
+    if(rect.right > window.innerWidth - padding){
+      left = Math.max(padding, window.innerWidth - rect.width - padding);
+    }
+    if(rect.bottom > window.innerHeight - padding){
+      top = Math.max(padding, window.innerHeight - rect.height - padding);
+    }
+    contextMenu.style.left = left + 'px';
+    contextMenu.style.top = top + 'px';
+    contextMenu.tabIndex = -1;
+    contextMenu.focus();
+  });
+}
+function hideContextMenu(){
+  contextMenu.style.display = 'none';
+  contextMenu.setAttribute('aria-hidden','true');
+  contextTargetSlot = null;
+}
+document.addEventListener('click', (ev)=>{ if(!contextMenu.contains(ev.target)) hideContextMenu(); });
+document.addEventListener('keydown', (ev)=>{ if(ev.key==='Escape') hideContextMenu(); });
+
+/* ======== Preview rendering (unchanged apart from move icon) ======== */
+function showProgress(total, dpiDisplay){
+  progressWrap.style.display = 'block';
+  progressWrap.setAttribute('aria-hidden','false');
+  progressText.textContent = `0 / ${total} images — DPI: ${dpiDisplay || '--'}`;
+  progressBar.style.width = '0%';
+}
+function updateProgress(current, total, dpiDisplay){
+  progressText.textContent = `${current} / ${total} images — DPI: ${dpiDisplay || '--'}`;
+  const pct = total > 0 ? Math.round((current/total)*100) : 0;
+  progressBar.style.width = `${pct}%`;
+}
+function hideProgress(){
+  setTimeout(()=>{ progressWrap.style.display = 'none'; progressWrap.setAttribute('aria-hidden','true'); progressText.textContent=''; progressBar.style.width='0%'; }, 300);
+}
+
+function renderPreview(){
+  const pageMm = getPageDimensions_mm();
+  const wrapRect = pagePreviewWrap.getBoundingClientRect();
+  const maxW = Math.max(320, wrapRect.width - 40);
+  const maxH = Math.max(420, wrapRect.height - 40);
+  const dpiScreen = 96;
+  const mmToPx = mm => mm * (dpiScreen / 25.4);
+  let pagePxW = mmToPx(pageMm.width);
+  let pagePxH = mmToPx(pageMm.height);
+  const scale = Math.min(maxW / pagePxW, maxH / pagePxH, 1);
+  pagePxW = Math.round(pagePxW * scale);
+  pagePxH = Math.round(pagePxH * scale);
+
+  let cols, rows;
+  if(pageSizeSel.value === 'a4-portrait'){ cols = 3; rows = 3; }
+  else { cols = 4; rows = 2; }
+
+  const visibleSlots = cols * rows;
+  const slotW = Math.floor(pagePxW / cols);
+  const slotH = Math.floor(pagePxH / rows);
+
+  pagePreview.style.width = pagePxW + 'px';
+  pagePreview.style.height = pagePxH + 'px';
+  pagePreview.style.gridTemplateColumns = `repeat(${cols}, 1fr)`;
+  pagePreview.style.gridTemplateRows = `repeat(${rows}, ${slotH}px)`;
+  pagePreview.style.gap = '0px';
+  pagePreview.innerHTML = '';
+
+  const plusIndex = getFirstEmptySlotIndex();
+
+  for(let i=0;i<visibleSlots;i++){
+    const slot = document.createElement('div');
+    slot.className = 'slot';
+    slot.dataset.slot = i;
+    slot.style.minWidth = slotW + 'px';
+    slot.style.minHeight = slotH + 'px';
+    slot.draggable = true;
+
+    slot.addEventListener('dragstart', (ev) => {
+      ev.dataTransfer.setData('text/plain', i.toString());
+      slot.classList.add('dragging');
+    });
+    slot.addEventListener('dragend', () => { slot.classList.remove('dragging'); });
+    slot.addEventListener('dragover', (ev)=>{ ev.preventDefault(); slot.style.outline='2px solid rgba(0,123,255,0.6)'; });
+    slot.addEventListener('dragleave', ()=>{ slot.style.outline='none'; });
+    slot.addEventListener('drop', (ev)=>{ ev.preventDefault(); slot.style.outline='none'; const from = parseInt(ev.dataTransfer.getData('text/plain')); handleSwapSlots(from, i); });
+
+    slot.addEventListener('click', (ev) => {
+      // clic gauche : dupliquer, alt+clic : supprimer
+      hideContextMenu();
+      const entryId = slots[i];
+      if(!entryId) return;
+      if(ev.altKey){
+        removeEntry(entryId);
+      } else {
+        duplicateEntry(entryId);
+      }
+    });
+
+    slot.addEventListener('contextmenu', (ev) => {
+      ev.preventDefault();
+      const entryId = slots[i];
+      if(!entryId){ hideContextMenu(); return; }
+      contextTargetSlot = i;
+      showContextMenuAt(ev.clientX, ev.clientY);
+    });
+
+    const entryId = slots[i];
+    if(entryId){
+      const entry = uploadedFiles.find(e => e.id === entryId);
+      if(entry){
+        const img = document.createElement('img');
+        img.src = entry.url;
+        img.alt = 'carte ' + entry.id;
+        slot.appendChild(img);
+
+        const rem = document.createElement('div');
+        rem.className = 'thumbRemove';
+        rem.textContent = '✖';
+        rem.title = 'Supprimer';
+        rem.addEventListener('click', (ev) => { ev.stopPropagation(); removeEntry(entry.id); });
+        slot.appendChild(rem);
+
+        const move = document.createElement('div');
+        move.className = 'thumbMove';
+        move.title = 'Déplacer';
+        move.setAttribute('role', 'button');
+        move.setAttribute('aria-label', 'Déplacer la carte (glisser-déposer)');
+        // SVG : flèches plus écartées + petite croix centrale + losange incomplet (flèches pointent vers l'extérieur)
+        move.innerHTML = `\n          <svg viewBox="0 0 48 48" xmlns="http://www.w3.org/2000/svg" aria-hidden="true" focusable="false">\n            <!-- petite croix centrale -->\n            <line x1="22" y1="24" x2="26" y2="24" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"/>\n            <line x1="24" y1="22" x2="24" y2="26" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"/>\n\n            <!-- arrows shafts spaced out from center -->\n            <line x1="24" y1="16" x2="24" y2="8" stroke="currentColor" stroke-width="2.4" stroke-linecap="round"/>\n            <path d="M20 12 L24 8 L28 12" stroke="currentColor" stroke-width="2.4" fill="none" stroke-linecap="round" stroke-linejoin="round"/>\n\n            <line x1="24" y1="32" x2="24" y2="40" stroke="currentColor" stroke-width="2.4" stroke-linecap="round"/>\n            <path d="M20 36 L24 40 L28 36" stroke="currentColor" stroke-width="2.4" fill="none" stroke-linecap="round" stroke-linejoin="round"/>\n\n            <line x1="16" y1="24" x2="8" y2="24" stroke="currentColor" stroke-width="2.4" stroke-linecap="round"/>\n            <path d="M12 20 L8 24 L12 28" stroke="currentColor" stroke-width="2.4" fill="none" stroke-linecap="round" stroke-linejoin="round"/>\n\n            <line x1="32" y1="24" x2="40" y2="24" stroke="currentColor" stroke-width="2.4" stroke-linecap="round"/>\n            <path d="M36 20 L40 24 L36 28" stroke="currentColor" stroke-width="2.4" fill="none" stroke-linecap="round" stroke-linejoin="round"/>\n\n            <!-- lasque/segments du losange inachevé (diagonales incomplètes) -->\n            <path d="M24 11 L30 17" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" fill="none" opacity="0.85"/>\n            <path d="M24 11 L18 17" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" fill="none" opacity="0.85"/>\n            <path d="M24 37 L30 31" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" fill="none" opacity="0.85"/>\n            <path d="M24 37 L18 31" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" fill="none" opacity="0.85"/>\n          </svg>\n          <div class="label">Déplacer</div>\n        `;
+        // forward mousedown to slot (UX nicety)
+        move.addEventListener('mousedown', (ev)=>{
+          slot.dispatchEvent(new MouseEvent('mousedown', {bubbles:true}));
+        });
+        slot.appendChild(move);
+
+        const idxEl = document.createElement('div');
+        idxEl.className = 'thumbIndex';
+        idxEl.textContent = (i+1);
+        slot.appendChild(idxEl);
+      } else {
+        slots[i] = null;
+      }
+    } else {
+      if(i === plusIndex){
+        const plus = document.createElement('div');
+        plus.className = 'plusTile';
+        plus.innerHTML = '<span>＋</span><div style="font-size:12px;color:#777;margin-top:6px;">Ajouter</div>';
+        plus.addEventListener('click', () => filePicker.click());
+        slot.appendChild(plus);
+      } else {
+        const emptyBlock = document.createElement('div');
+        emptyBlock.style.width='100%'; emptyBlock.style.height='100%';
+        slot.appendChild(emptyBlock);
+      }
+    }
+    pagePreview.appendChild(slot);
+  }
+
+  updateStatus();
+  const hasAny = uploadedFiles.length > 0;
+  downloadBtn.disabled = !hasAny;
+}
+
+/* ======== file picker handling ======== */
+filePicker.addEventListener('change', (ev) => {
+  const files = Array.from(ev.target.files || []);
+  if(files.length) addFiles(files);
+  filePicker.value = '';
+});
+
+function addFiles(filesList){
+  for(const f of filesList){
+    const id = uid();
+    const url = URL.createObjectURL(f);
+    uploadedFiles.push({ id, file: f, url });
+  }
+  let next = getFirstEmptySlotIndex();
+  for(let i = uploadedFiles.length - filesList.length; i < uploadedFiles.length && next !== -1; i++){
+    const entry = uploadedFiles[i];
+    slots[next] = entry.id;
+    next = getFirstEmptySlotIndex();
+  }
+  normalizeUploadedFilesOrderFromSlots();
+  renderPreview();
+  updateEstimateUI();
+}
+
+function normalizeUploadedFilesOrderFromSlots(){
+  const inSlots = slots.filter(id => id !== null);
+  const remaining = uploadedFiles.filter(e => !inSlots.includes(e.id)).map(e => e.id);
+  const newOrder = inSlots.concat(remaining);
+  const next = [];
+  newOrder.forEach(id => { const found = uploadedFiles.find(e=>e.id===id); if(found) next.push(found); });
+  uploadedFiles = next.slice();
+}
+
+function removeEntry(id){
+  const idx = uploadedFiles.findIndex(e => e.id === id);
+  if(idx !== -1){
+    try{ URL.revokeObjectURL(uploadedFiles[idx].url); } catch(_) {}
+    uploadedFiles.splice(idx,1);
+  }
+  for(let i=0;i<slots.length;i++) if(slots[i]===id) slots[i]=null;
+  const remaining = uploadedFiles.map(e=>e.id);
+  slots = new Array(MAX_SLOTS).fill(null);
+  for(let i=0;i<remaining.length && i<MAX_SLOTS;i++) slots[i]=remaining[i];
+  renderPreview();
+  updateEstimateUI();
+}
+
+function duplicateEntry(id){
+  const entry = uploadedFiles.find(e=>e.id===id);
+  if(!entry) return;
+  const emptyIdx = getFirstEmptySlotIndex();
+  if(emptyIdx === -1){
+    alert('Aucune case libre pour dupliquer (max affichées selon format).');
+    return;
+  }
+  const newId = uid();
+  const newUrl = URL.createObjectURL(entry.file);
+  uploadedFiles.push({ id: newId, file: entry.file, url: newUrl });
+  slots[emptyIdx] = newId;
+  normalizeUploadedFilesOrderFromSlots();
+  renderPreview();
+  updateEstimateUI();
+}
+
+function handleSwapSlots(fromIdx, toIdx){
+  const tmp = slots[fromIdx];
+  slots[fromIdx] = slots[toIdx];
+  slots[toIdx] = tmp;
+  normalizeUploadedFilesOrderFromSlots();
+  renderPreview();
+  updateEstimateUI();
+}
+
+clearAllBtn.addEventListener('click', () => {
+  uploadedFiles.forEach(e=>{ try{ URL.revokeObjectURL(e.url); } catch(_){} });
+  uploadedFiles = []; slots = new Array(MAX_SLOTS).fill(null);
+  renderPreview();
+  updateEstimateUI();
+});
+
+pageSizeSel.addEventListener('change', ()=>{ renderPreview(); updateEstimateUI(); });
+dpiSelect.addEventListener('change', ()=>{ updateEstimateUI(); });
+bleedInput.addEventListener('input', ()=>{ updateEstimateUI(); });
+crossColorInput.addEventListener('input', (e)=>{ crossColorHex = e.target.value || '#000000'; });
+
+/* ======== context menu buttons behaviour ======== */
+ctxDupBtn.addEventListener('click', ()=> {
+  if(contextTargetSlot===null) return hideContextMenu();
+  const id = slots[contextTargetSlot];
+  if(id) duplicateEntry(id);
+  hideContextMenu();
+});
+ctxDelBtn.addEventListener('click', ()=> {
+  if(contextTargetSlot===null) return hideContextMenu();
+  const id = slots[contextTargetSlot];
+  if(id) removeEntry(id);
+  hideContextMenu();
+});
+
+/* ======== Utility: read natural dimensions of a File image ======== */
+function getImageDimensions(file){
+  return new Promise((resolve)=>{
+    const reader = new FileReader();
+    reader.onload = (e)=>{
+      const img = new Image();
+      img.onload = ()=> resolve({ width: img.naturalWidth || img.width, height: img.naturalHeight || img.height });
+      img.onerror = ()=> resolve({ width: null, height: null });
+      img.src = e.target.result;
+    };
+    reader.onerror = ()=> resolve({ width: null, height: null });
+    reader.readAsDataURL(file);
+  });
+}
+
+/* ======== estimation de taille PDF (nouveau) ======== */
+async function estimatePdfSize(filesEntries, dpiOption){
+  if(!filesEntries || filesEntries.length === 0) return { mb: 0, dpiUsed: null, capped:false };
+  const bleedMm = parseFloat(bleedInput.value) || 1;
+  // compute chosen DPI (mirror logic from buildPdfBlob)
+  let chosenDpi;
+  if(dpiOption === 'max'){
+    const dimsList = await Promise.all(filesEntries.map(fe => getImageDimensions(fe.file)));
+    const mmPerInch = 25.4;
+    const cardWInch = CARD_W_MM / mmPerInch;
+    const cardHInch = CARD_H_MM / mmPerInch;
+    const perImageDpi = dimsList.map(d => {
+      if(!d || !d.width || !d.height) return null;
+      const dpiX = d.width / cardWInch;
+      const dpiY = d.height / cardHInch;
+      return Math.min(dpiX, dpiY);
+    }).filter(x => x && isFinite(x) && x > 0);
+
+    const minDpiBound = 150;
+    const maxDpiBound = 1800;
+    if(perImageDpi.length === 0){
+      chosenDpi = 600;
+    } else {
+      const raw = Math.floor(Math.min(...perImageDpi));
+      chosenDpi = Math.max(minDpiBound, Math.min(maxDpiBound, raw));
+    }
+  } else {
+    chosenDpi = parseInt(dpiOption, 10) || 600;
+  }
+
+  // determine cols/rows
+  let cols, rows;
+  if(pageSizeSel.value === 'a4-portrait'){ cols = 3; rows = 3; }
+  else { cols = 4; rows = 2; }
+  const page = getPageDimensions_mm();
+  if(page.width > page.height){ cols = 4; rows = 2; } else { cols = 3; rows = 3; }
+
+  const mmToPxAt = (mm, dpi) => (mm/25.4) * dpi;
+  const cardW_px = Math.round(mmToPxAt(CARD_W_MM, chosenDpi));
+  const cardH_px = Math.round(mmToPxAt(CARD_H_MM, chosenDpi));
+  const bleed_px = Math.max(1, Math.round(mmToPxAt(bleedMm, chosenDpi)));
+  const finalCardW_px = cardW_px + 2*bleed_px;
+  const finalCardH_px = cardH_px + 2*bleed_px;
+
+  // cap detection (same safety cap)
+  const MAX_CANVAS_PX = 8192;
+  let dpiCapped = false;
+  let chosenDpiFinal = chosenDpi;
+  if(Math.max(finalCardW_px, finalCardH_px) > MAX_CANVAS_PX){
+    const scale = MAX_CANVAS_PX / Math.max(finalCardW_px, finalCardH_px);
+    const newDpi = Math.max(72, Math.floor(chosenDpi * scale));
+    chosenDpiFinal = newDpi;
+  }
+
+  // recalc with final dpi
+  const finalCardW_px2 = Math.round(mmToPxAt(CARD_W_MM, chosenDpiFinal)) + 2 * Math.max(1, Math.round(mmToPxAt(bleedMm, chosenDpiFinal)));
+  const finalCardH_px2 = Math.round(mmToPxAt(CARD_H_MM, chosenDpiFinal)) + 2 * Math.max(1, Math.round(mmToPxAt(bleedMm, chosenDpiFinal)));
+
+  if(chosenDpiFinal !== chosenDpi) dpiCapped = true;
+
+  // bytes worst-case (RGBA)
+  const imagesCount = filesEntries.length;
+  const uncompressedBytes = finalCardW_px2 * finalCardH_px2 * 4 * imagesCount;
+  // PNG compression estimate (photo-like): use factor ~0.6 (conservative)
+  const pngEstimateBytes = uncompressedBytes * 0.6;
+  const colsRows = cols * rows;
+  const pages = Math.max(1, Math.ceil(imagesCount / colsRows));
+  // overhead for PDF and jsPDF: small per page
+  const pdfOverhead = pages * 8192;
+  const totalBytes = pngEstimateBytes + pdfOverhead;
+  const mb = totalBytes / (1024*1024);
+  return { mb, dpiUsed: chosenDpiFinal, capped: dpiCapped, pages };
+}
+
+async function updateEstimateUI(){
+  if(!uploadedFiles.length){
+    estimateText.textContent = '—';
+    return;
+  }
+  estimateText.textContent = 'Calcul…';
+  try {
+    const res = await estimatePdfSize(uploadedFiles, dpiSelect.value);
+    const mb = Math.max(0.01, res.mb || 0);
+    const dpiStr = res.dpiUsed ? `${Math.round(res.dpiUsed)}${res.capped ? ' (capé)' : ''}` : '--';
+    estimateText.textContent = `${mb.toFixed(1)} Mo env. — ${res.pages} page(s) — DPI: ${dpiStr}`;
+  } catch(e){
+    estimateText.textContent = 'Erreur estimation';
+    console.warn('Estimation échouée', e);
+  }
+}
+
+/* ======== PDF generation (final) — with DPI cap to avoid huge canvases (modifiée) ======== */
+async function buildPdfBlob(filesEntries, dpiOption){
+  if(!jsPDF) throw new Error('jsPDF non initialisé');
+  const bleedMm = parseFloat(bleedInput.value) || 1;
+
+  // DPI calculation (including 'max' mode)
+  let chosenDpi;
+  if(dpiOption === 'max'){
+    const dimsList = await Promise.all(filesEntries.map(fe => getImageDimensions(fe.file)));
+    const mmPerInch = 25.4;
+    const cardWInch = CARD_W_MM / mmPerInch;
+    const cardHInch = CARD_H_MM / mmPerInch;
+    const perImageDpi = dimsList.map(d => {
+      if(!d || !d.width || !d.height) return null;
+      const dpiX = d.width / cardWInch;
+      const dpiY = d.height / cardHInch;
+      return Math.min(dpiX, dpiY);
+    }).filter(x => x && isFinite(x) && x > 0);
+
+    const minDpiBound = 150;
+    const maxDpiBound = 1800;
+    if(perImageDpi.length === 0){
+      chosenDpi = 600;
+    } else {
+      const raw = Math.floor(Math.min(...perImageDpi));
+      chosenDpi = Math.max(minDpiBound, Math.min(maxDpiBound, raw));
+    }
+  } else {
+    chosenDpi = parseInt(dpiOption, 10) || 600;
+  }
+
+  // determine cols/rows
+  let cols, rows;
+  if(pageSizeSel.value === 'a4-portrait'){ cols = 3; rows = 3; }
+  else { cols = 4; rows = 2; }
+  const page = getPageDimensions_mm();
+  if(page.width > page.height){ cols = 4; rows = 2; } else { cols = 3; rows = 3; }
+
+  // compute tentative pixel sizes and cap DPI if necessary to avoid too large canvases
+  const mmToPxAt = (mm, dpi) => (mm/25.4) * dpi;
+  const CARD_W_MM_CONST = CARD_W_MM, CARD_H_MM_CONST = CARD_H_MM;
+  let cardW_px = Math.round(mmToPxAt(CARD_W_MM_CONST, chosenDpi));
+  let cardH_px = Math.round(mmToPxAt(CARD_H_MM_CONST, chosenDpi));
+  // bleed in px to compute final canvas dimension (approx)
+  let bleed_px = Math.max(1, Math.round(mmToPxAt(bleedMm, chosenDpi)));
+  let finalCardW_px = cardW_px + 2*bleed_px;
+  let finalCardH_px = cardH_px + 2*bleed_px;
+
+  // Safety cap (browser canvas limits vary; 8192 is a reasonable safe cap)
+  const MAX_CANVAS_PX = 8192;
+  let dpiCapped = false;
+  const maxDim = Math.max(finalCardW_px, finalCardH_px);
+  if(maxDim > MAX_CANVAS_PX){
+    const scale = MAX_CANVAS_PX / maxDim;
+    const newDpi = Math.max(72, Math.floor(chosenDpi * scale));
+    // recompute all px dims with the new DPI
+    chosenDpi = newDpi;
+    cardW_px = Math.round(mmToPxAt(CARD_W_MM_CONST, chosenDpi));
+    cardH_px = Math.round(mmToPxAt(CARD_H_MM_CONST, chosenDpi));
+    bleed_px = Math.max(1, Math.round(mmToPxAt(bleedMm, chosenDpi)));
+    finalCardW_px = cardW_px + 2*bleed_px;
+    finalCardH_px = cardH_px + 2*bleed_px;
+    dpiCapped = true;
+    console.warn(`DPI réduit pour éviter des canvases trop grands. DPI final : ${chosenDpi}`);
+  }
+
+  // show progress with the actual DPI used (and indicate if capped)
+  showProgress(filesEntries.length, chosenDpi + (dpiCapped ? ' (capé)' : ''));
+
+  // compute derived values
+  const slotW_mm = CARD_W_MM_CONST + 2*bleedMm;
+  const slotH_mm = CARD_H_MM_CONST + 2*bleedMm;
+  const cardsPerPage = Math.max(1, cols * rows);
+  const PAGE_W_MM = page.width, PAGE_H_MM = page.height;
+  const marginX_mm = (PAGE_W_MM - cols*slotW_mm)/2;
+  const marginY_mm = (PAGE_H_MM - rows*slotH_mm)/2;
+
+  // create canvases for each image
+  const canvases = [];
+  // precompute cardW_px/cardH_px/bleed_px for createCardWithBleed signature
+  const cardW_forCanvas = cardW_px;
+  const cardH_forCanvas = cardH_px;
+  const bleed_forCanvas = bleed_px;
+
+  for(let i=0;i<filesEntries.length;i++){
+    const entry = filesEntries[i];
+    const c = await createCardWithBleed(entry.file, finalCardW_px, finalCardH_px, cardW_forCanvas, cardH_forCanvas, bleed_forCanvas);
+    canvases.push(c);
+    updateProgress(i+1, filesEntries.length, chosenDpi + (dpiCapped ? ' (capé)' : ''));
+    // small yield for UI update
+    await new Promise(r=>setTimeout(r, 10));
+  }
+
+  const pdf = new jsPDF({ unit: 'mm', format: [PAGE_W_MM, PAGE_H_MM] });
+  const numPages = Math.ceil(canvases.length / cardsPerPage);
+
+  for(let p=0;p<numPages;p++){
+    if(p>0) pdf.addPage();
+    const startIndex = p*cardsPerPage;
+    const endIndex = Math.min(startIndex + cardsPerPage, canvases.length);
+    for(let i=startIndex;i<endIndex;i++){
+      const cardCanvas = canvases[i];
+      const indexOnPage = i % cardsPerPage;
+      const r = Math.floor(indexOnPage / cols);
+      const c = indexOnPage % cols;
+      const x_mm = marginX_mm + c * slotW_mm;
+      const y_mm = marginY_mm + r * slotH_mm;
+      pdf.addImage(cardCanvas.toDataURL('image/png'), 'PNG', x_mm, y_mm, slotW_mm, slotH_mm);
+    }
+    // Draw cut marks with page dimensions so lines can be drawn in margins only
+    drawPdfCutMarks(pdf, marginX_mm, marginY_mm, rows, cols, CARD_W_MM_CONST, CARD_H_MM_CONST, bleedMm, 'cross', PAGE_W_MM, PAGE_H_MM);
+  }
+
+  hideProgress();
+  return pdf.output('blob');
+}
+
+/* ======== Helpers utilisés par createCardWithBleed (NON MODIFIÉES) ======== */
+function avgColorFromCtx(ctx, sx, sy, sw, sh) {
+  try {
+    const data = ctx.getImageData(sx, sy, Math.max(1,sw), Math.max(1,sh)).data;
+    let r=0,g=0,b=0,a=0,cnt=0;
+    for(let i=0;i<data.length;i+=4){
+      const alpha = data[i+3]/255;
+      if(alpha === 0) continue;
+      r += data[i]; g += data[i+1]; b += data[i+2]; a += alpha; cnt++;
+    }
+    if(cnt===0){
+      const d = ctx.getImageData(Math.max(0,sx), Math.max(0,sy), 1, 1).data;
+      return { r:d[0], g:d[1], b:d[2], a:d[3]/255 };
+    }
+    return { r: Math.round(r/cnt), g: Math.round(g/cnt), b: Math.round(b/cnt), a: a/cnt };
+  } catch(e){
+    return { r:200, g:200, b:200, a:1 };
+  }
+}
+
+/* ======== createCardWithBleed (NON MODIFIÉE) ======== */
+function createCardWithBleed(file, finalW, finalH, cardW, cardH, bleed){
+  return new Promise((resolve,reject)=>{
+    const reader=new FileReader();
+    reader.onload=e=>{
+      const img=new Image();
+      img.onload=()=>{
+        const src=document.createElement('canvas');
+        src.width=cardW; src.height=cardH;
+        const sctx = src.getContext('2d');
+        sctx.clearRect(0,0,cardW,cardH);
+        try {
+          sctx.drawImage(img,0,0,img.naturalWidth,img.naturalHeight,0,0,cardW,cardH);
+        } catch(ex){
+          sctx.drawImage(img,0,0);
+        }
+
+        const c=document.createElement('canvas');
+        c.width=finalW; c.height=finalH;
+        const ctx=c.getContext('2d');
+        ctx.clearRect(0,0,finalW,finalH);
+
+        let sampleAvg = avgColorFromCtx(sctx, 0, 0, Math.max(1,cardW), Math.max(1,cardH));
+        if(sampleAvg && sampleAvg.a < 1){
+          ctx.fillStyle = `rgba(${sampleAvg.r},${sampleAvg.g},${sampleAvg.b},${Math.max(0.95,sampleAvg.a)})`;
+          ctx.fillRect(0,0,finalW,finalH);
+        }
+
+        const scale = Math.max(finalW / cardW, finalH / cardH);
+        const destW = Math.round(cardW * scale);
+        const destH = Math.round(cardH * scale);
+        const dx = Math.round((finalW - destW) / 2);
+        const dy = Math.round((finalH - destH) / 2);
+        try {
+          ctx.drawImage(src, 0, 0, cardW, cardH, dx, dy, destW, destH);
+        } catch(e){
+          ctx.fillStyle = `rgba(${sampleAvg.r},${sampleAvg.g},${sampleAvg.b},${sampleAvg.a})`;
+          ctx.fillRect(0,0,finalW,finalH);
+        }
+
+        try {
+          const destW2 = destW;
+          const destH2 = destH;
+          const dxTR = Math.round(finalW - destW2);
+          const dyTR = Math.round((finalH - destH2) / 2);
+          ctx.globalAlpha = 1.0;
+          ctx.drawImage(src, 0, 0, cardW, cardH, dxTR, dyTR, destW2, destH2);
+          const dxTL = Math.round((finalW - destW2) / 2);
+          const dyTL = Math.round(0);
+          ctx.drawImage(src, 0, 0, cardW, cardH, dxTL, dyTL, destW2, destH2);
+        } catch(e){}
+
+        const maxStrip = Math.min( Math.max(2, Math.floor(bleed)), Math.max(4, Math.round(Math.min(cardW, cardH) * 0.05)) );
+        try {
+          for(let s=1; s<=maxStrip; s++){
+            ctx.drawImage(src, 0, 0, cardW, 1, bleed, bleed - s, cardW, s);
+            ctx.drawImage(src, 0, cardH-1, cardW, 1, bleed, bleed+cardH, cardW, s);
+            ctx.drawImage(src, 0, 0, 1, cardH, bleed - s, bleed, s, cardH);
+            ctx.drawImage(src, cardW-1, 0, 1, cardH, bleed+cardW, bleed, s, cardH);
+          }
+        } catch(e){}
+
+        const cornerPatch = Math.min( Math.max(24, Math.round(Math.min(cardW,cardH)*0.12)), Math.round(Math.min(cardW,cardH)*0.28) );
+        try {
+          ctx.drawImage(src, 0, 0, cornerPatch, cornerPatch, 0, 0, bleed + cornerPatch, bleed + cornerPatch);
+          ctx.drawImage(src, cardW-cornerPatch, 0, cornerPatch, cornerPatch, finalW - (bleed + cornerPatch), 0, bleed + cornerPatch, bleed + cornerPatch);
+          ctx.drawImage(src, 0, cardH-cornerPatch, cornerPatch, cornerPatch, 0, finalH - (bleed + cornerPatch), bleed + cornerPatch, bleed + cornerPatch);
+          ctx.drawImage(src, cardW-cornerPatch, cardH-cornerPatch, cornerPatch, cornerPatch, finalW - (bleed + cornerPatch), finalH - (bleed + cornerPatch), bleed + cornerPatch, bleed + cornerPatch);
+        } catch(e){}
+
+        try {
+          ctx.fillStyle = `rgba(${sampleAvg.r},${sampleAvg.g},${sampleAvg.b},${Math.max(0.95, sampleAvg.a)})`;
+          ctx.fillRect(0,0,Math.min(bleed+4, finalW), Math.min(bleed+4, finalH));
+          ctx.fillRect(finalW - Math.min(bleed+4, finalW), 0, Math.min(bleed+4, finalW), Math.min(bleed+4, finalH));
+          ctx.fillRect(0, finalH - Math.min(bleed+4, finalH), Math.min(bleed+4, finalW), Math.min(bleed+4, finalH));
+          ctx.fillRect(finalW - Math.min(bleed+4, finalW), finalH - Math.min(bleed+4, finalH), Math.min(bleed+4, finalW), Math.min(bleed+4, finalH));
+        } catch(e){}
+
+        try {
+          ctx.drawImage(src, 0, 0, cardW, cardH, bleed, bleed, cardW, cardH);
+        } catch(e){
+          ctx.drawImage(src, 0, 0);
+        }
+
+        try {
+          const checkSize = Math.min( Math.max(8, Math.round(Math.min(finalW, finalH) * 0.06)), 64 );
+          function needsPatch(x, y, w, h){
+            try {
+              const id = ctx.getImageData(x, y, w, h).data;
+              for(let i=0;i<id.length;i+=4){
+                const r = id[i], g = id[i+1], b = id[i+2], a = id[i+3];
+                if(a < 250 || (r > 245 && g > 245 && b > 245)) return true;
+              }
+              return false;
+            } catch(e){
+              return false;
+            }
+          }
+          const trx = Math.max(0, finalW - checkSize);
+          const tryy = 0;
+          if(needsPatch(trx, tryy, checkSize, checkSize)){
+            ctx.drawImage(src, Math.max(0, cardW - cornerPatch), 0, cornerPatch, cornerPatch, finalW - (bleed + cornerPatch), 0, bleed + cornerPatch, bleed + cornerPatch);
+          }
+          if(needsPatch(0, 0, checkSize, checkSize)){
+            ctx.drawImage(src, 0, 0, cornerPatch, cornerPatch, 0, 0, bleed + cornerPatch, bleed + cornerPatch);
+          }
+          if(needsPatch(0, finalH - checkSize, checkSize, checkSize)){
+            ctx.drawImage(src, 0, Math.max(0, cardH - cornerPatch), cornerPatch, cornerPatch, 0, finalH - (bleed + cornerPatch), bleed + cornerPatch, bleed + cornerPatch);
+          }
+          if(needsPatch(finalW - checkSize, finalH - checkSize, checkSize, checkSize)){
+            ctx.drawImage(src, Math.max(0, cardW - cornerPatch), Math.max(0, cardH - cornerPatch), cornerPatch, cornerPatch, finalW - (bleed + cornerPatch), finalH - (bleed + cornerPatch), bleed + cornerPatch, bleed + cornerPatch);
+          }
+        } catch(e){}
+
+        resolve(c);
+      };
+      img.onerror = () => reject(new Error('Erreur chargement image'));
+      img.src = e.target.result;
+    };
+    reader.onerror = () => reject(new Error('Erreur lecture fichier'));
+    reader.readAsDataURL(file);
+  });
+}
+
+/* ======== drawPdfCutMarks (REWORKED) ======== */
+function drawPdfCutMarks(pdf, mx, my, rows, cols, cardW, cardH, bleedMm, mode, pageW, pageH){
+  if(mode === 'none') return;
+
+  const crossHalfLen = 1.5;
+  const dashLen = 0.2;
+  const dashGap = 0.5;
+  const outerGap = 1.0;
+  const solidLineWidth = 0.35;
+  const dashLineWidth = 0.25;
+
+  function drawDashedLine(x1,y1,x2,y2, dash, gap){
+    const dx = x2 - x1;
+    const dy = y2 - y1;
+    const len = Math.hypot(dx, dy);
+    if(len <= 0.0001) return;
+    const vx = dx / len;
+    const vy = dy / len;
+    let pos = 0;
+    let draw = true;
+    while(pos < len - 0.0001){
+      const seg = draw ? dash : gap;
+      const segEnd = Math.min(len, pos + seg);
+      if(draw && segEnd > pos){
+        const sx = x1 + vx * pos;
+        const sy = y1 + vy * pos;
+        const ex = x1 + vx * segEnd;
+        const ey = y1 + vy * segEnd;
+        pdf.line(sx, sy, ex, ey);
+      }
+      pos += seg;
+      draw = !draw;
+    }
+  }
+
+  const slotW = cardW + 2*bleedMm;
+  const slotH = cardH + 2*bleedMm;
+
+  const corners = [];
+  for(let r=0;r<rows;r++){
+    for(let c=0;c<cols;c++){
+      const baseX = mx + c * slotW;
+      const baseY = my + r * slotH;
+      const left = baseX + bleedMm;
+      const top = baseY + bleedMm;
+      const right = left + cardW;
+      const bottom = top + cardH;
+      corners.push([left, top]);
+      corners.push([right, top]);
+      corners.push([left, bottom]);
+      corners.push([right, bottom]);
+    }
+  }
+
+  function hexToRgb(hex){
+    if(!hex) return [0,0,0];
+    const h = hex.replace('#','');
+    if(h.length === 3){
+      return [parseInt(h[0]+h[0],16), parseInt(h[1]+h[1],16), parseInt(h[2]+h[2],16)];
+    } else {
+      return [parseInt(h.slice(0,2),16), parseInt(h.slice(2,4),16), parseInt(h.slice(4,6),16)];
+    }
+  }
+  const rgb = hexToRgb(crossColorHex || '#000000');
+
+  pdf.setDrawColor(...rgb);
+  pdf.setLineWidth(dashLineWidth);
+  corners.forEach(([x,y])=>{
+    drawDashedLine(x - crossHalfLen, y, x + crossHalfLen, y, dashLen, dashGap);
+    drawDashedLine(x, y - crossHalfLen, x, y + crossHalfLen, dashLen, dashGap);
+  });
+
+  const gridLeft = mx;
+  const gridTop = my;
+  const gridRight = mx + cols * slotW;
+  const gridBottom = my + rows * slotH;
+
+  const vSet = new Set();
+  const hSet = new Set();
+  for(let c=0;c<cols;c++){
+    const baseX = mx + c * slotW;
+    const left = baseX + bleedMm;
+    const right = left + cardW;
+    vSet.add(left);
+    vSet.add(right);
+  }
+  for(let r=0;r<rows;r++){
+    const baseY = my + r * slotH;
+    const top = baseY + bleedMm;
+    const bottom = top + cardH;
+    hSet.add(top);
+    hSet.add(bottom);
+  }
+  const vPos = Array.from(vSet).map(x=>+x).sort((a,b)=>a-b);
+  const hPos = Array.from(hSet).map(y=>+y).sort((a,b)=>a-b);
+
+  pdf.setDrawColor(0);
+  pdf.setLineWidth(solidLineWidth);
+
+  vPos.forEach(x => {
+    const xClamped = Math.max(-10, Math.min(pageW + 10, x));
+    const topSegEnd = Math.max(0, gridTop - outerGap);
+    if(topSegEnd > 0){
+      pdf.line(xClamped, 0, xClamped, topSegEnd);
+    }
+    const bottomSegStart = Math.min(pageH, gridBottom + outerGap);
+    if(bottomSegStart < pageH){
+      pdf.line(xClamped, bottomSegStart, xClamped, pageH);
+    }
+  });
+
+  hPos.forEach(y => {
+    const yClamped = Math.max(-10, Math.min(pageH + 10, y));
+    const leftSegEnd = Math.max(0, gridLeft - outerGap);
+    if(leftSegEnd > 0){
+      pdf.line(0, yClamped, leftSegEnd, yClamped);
+    }
+    const rightSegStart = Math.min(pageW, gridRight + outerGap);
+    if(rightSegStart < pageW){
+      pdf.line(rightSegStart, yClamped, pageW, yClamped);
+    }
+  });
+}
+
+/* ======== déclencheur téléchargement ======== */
+downloadBtn.addEventListener('click', async () => {
+  if(!uploadedFiles.length) return;
+  try{
+    normalizeUploadedFilesOrderFromSlots();
+    downloadBtn.disabled = true;
+    const prevText = downloadBtn.textContent;
+    downloadBtn.textContent = 'Génération...';
+    const dpiOption = dpiSelect.value; // '300' | '600' | 'max'
+    const blob = await buildPdfBlob(uploadedFiles, dpiOption);
+    const url = URL.createObjectURL(blob);
+    const a=document.createElement('a'); a.href = url; a.download='cartes_hd.pdf'; document.body.appendChild(a); a.click(); document.body.removeChild(a);
+    URL.revokeObjectURL(url);
+  } catch(err){
+    console.error('Erreur génération PDF :', err);
+    alert('Erreur lors de la génération du PDF — consulte la console.');
+  } finally {
+    downloadBtn.disabled = false;
+    downloadBtn.textContent = 'Télécharger le PDF';
+  }
+});
+
+/* ======== initial render & estimate ======== */
+renderPreview();
+updateStatus();
+updateEstimateUI();
+</script>
+</body>
+</html>
